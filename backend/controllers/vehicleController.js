@@ -4,6 +4,7 @@ import { formatingPrice } from "../utils/priceUtils.js";
 import fsSync from "fs";
 import * as fs from "fs";
 import { imageToBase64 } from "../utils/fileUtils.js";
+import moment from "moment-timezone";
 import {
   uploadPhoto,
   getPhotoUrl,
@@ -1417,22 +1418,190 @@ export const getVehiclesByUser = async (req, res) => {
   }
 };
 
+// export const todayAuction = async (req, res) => {
+//   try {
+//     const { search, auctionDate } = req.query;
+
+//     let whereClauses = [
+//       `DATE(b.startTime) = CURDATE()`,
+//       `v.vehicleStatus = 'Y'`,
+//       `(u.role = 'seller' OR u.role = 'admin')`,
+//       `(b.auctionStatus = 'upcoming' OR b.auctionStatus = 'live')`,
+//     ];
+
+//     let values = [];
+
+//     if (search && search.trim() !== "") {
+//       const likeValue = `%${search.trim()}%`;
+
+//       whereClauses.push(`
+//         (
+//           v.make LIKE ? OR
+//           c.cityName LIKE ? OR
+//           v.model LIKE ? OR
+//           v.series LIKE ? OR
+//           v.bodyStyle LIKE ? OR
+//           v.color LIKE ? OR
+//           v.lot_number LIKE ? OR
+//           b.id LIKE ?
+//         )
+//       `);
+
+//       values.push(
+//         likeValue, // make
+//         likeValue, // cityName (instead of locationId)
+//         likeValue, // model
+//         likeValue, // series
+//         likeValue, // bodyStyle
+//         likeValue, // color
+//         likeValue, // lot_number
+//         likeValue // b.id
+//       );
+//     }
+
+//     if (auctionDate && auctionDate.trim() !== "") {
+//       whereClauses.push(`DATE(v.auctionDate) = ?`);
+//       values.push(auctionDate.trim());
+//     }
+
+//     const [result] = await pool.query(
+//       `
+//         SELECT
+//           b.id AS bidId,
+//           b.userId,
+//           b.vehicleId,
+//           b.estRetailValue,
+//           b.yourOffer,
+//           b.sellerOffer,
+//           b.bidStatus,
+//           b.eligibilityStatus,
+//           b.saleStatus,
+//           b.maxBid,
+//           b.MonsterBid,
+//           b.bidApprStatus,
+//           b.status AS bidStatusFlag,
+//           b.winStatus,
+//           b.createdAt AS bidCreatedAt,
+//           b.updatedAt AS bidUpdatedAt,
+//           b.startTime,
+//           b.endTime,
+//           b.auctionStatus,
+
+//           v.id AS vehicleId,
+//           v.lot_number,
+//           v.year,
+//           v.make,
+//           v.model,
+//           v.series,
+//           v.bodyStyle,
+//           v.engine,
+//           v.transmission,
+//           v.driveType,
+//           v.fuelType,
+//           v.color,
+//           v.mileage,
+//           v.vehicleCondition,
+//           v.keysAvailable,
+//           v.locationId,
+//           c.cityName as locationId,
+//           v.auctionDate,
+//           v.currentBid,
+//           v.buyNowPrice,
+//           v.vehicleStatus,
+//           v.image,
+//           v.certifyStatus,
+
+//           u.id AS userId,
+//           u.name,
+//           u.contact,
+//           u.cnic,
+//           u.address,
+//           u.postcode,
+//           u.email,
+//           u.date,
+//           u.role
+
+//         FROM tbl_vehicles v
+//         JOIN tbl_bid b ON v.id = b.vehicleId
+//         JOIN tbl_users u ON u.id = b.userId
+//         LEFT JOIN tbl_cities c ON v.locationId = c.id
+//         WHERE ${whereClauses.join(" AND ")}
+//       `,
+//       values
+//     );
+
+//     const formattedResult = result.map((row) => {
+//       const formatPriceField = (field) => {
+//         try {
+//           return formatingPrice(row[field]);
+//         } catch {
+//           return null;
+//         }
+//       };
+
+//       let cloudinaryImages = [];
+//       try {
+//         if (row.image) {
+//           const parsed = JSON.parse(row.image);
+//           if (Array.isArray(parsed) && parsed.length > 0) {
+//             cloudinaryImages = parsed.map((publicId) =>
+//               getPhotoUrl(publicId, {
+//                 width: 400,
+//                 crop: "thumb",
+//                 quality: "auto",
+//               })
+//             );
+//           }
+//         }
+//       } catch (err) {
+//         console.warn(
+//           `Failed to parse image array for bidId ${row.bidId}:`,
+//           err.message
+//         );
+//       }
+
+//       return {
+//         ...row,
+//         yourOffer: formatPriceField("yourOffer"),
+//         sellerOffer: formatPriceField("sellerOffer"),
+//         buyNowPrice: formatPriceField("buyNowPrice"),
+//         currentBid: formatPriceField("currentBid"),
+//         maxBid: formatPriceField("maxBid"),
+//         MonsterBid: formatPriceField("MonsterBid"),
+//         images: cloudinaryImages,
+//         cityName: row.cityName || "Unknown",
+//       };
+//     });
+
+//     return res.status(200).json(formattedResult);
+//   } catch (error) {
+//     console.error("Error in live Auctions controller:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error: error.message,
+//     });
+//   }
+// };
+
 export const todayAuction = async (req, res) => {
   try {
     const { search, auctionDate } = req.query;
-
+ 
     let whereClauses = [
       `DATE(b.startTime) = CURDATE()`,
       `v.vehicleStatus = 'Y'`,
       `(u.role = 'seller' OR u.role = 'admin')`,
-      `(b.auctionStatus = 'upcoming' OR b.auctionStatus = 'live')`,
+      // `(b.auctionStatus = 'upcoming' OR b.auctionStatus = 'live')`,
+`(b.auctionStatus = 'live')`, // sirf live
+  `CONVERT_TZ(b.startTime, '+00:00', '+05:00') <= NOW() AND CONVERT_TZ(b.endTime, '+00:00', '+05:00') >= NOW()`,
     ];
-
+ 
     let values = [];
-
+ 
     if (search && search.trim() !== "") {
       const likeValue = `%${search.trim()}%`;
-
+ 
       whereClauses.push(`
         (
           v.make LIKE ? OR
@@ -1445,7 +1614,7 @@ export const todayAuction = async (req, res) => {
           b.id LIKE ?
         )
       `);
-
+ 
       values.push(
         likeValue, // make
         likeValue, // cityName (instead of locationId)
@@ -1457,12 +1626,12 @@ export const todayAuction = async (req, res) => {
         likeValue // b.id
       );
     }
-
+ 
     if (auctionDate && auctionDate.trim() !== "") {
       whereClauses.push(`DATE(v.auctionDate) = ?`);
       values.push(auctionDate.trim());
     }
-
+ 
     const [result] = await pool.query(
       `
         SELECT
@@ -1485,7 +1654,7 @@ export const todayAuction = async (req, res) => {
           b.startTime,
           b.endTime,
           b.auctionStatus,
-
+ 
           v.id AS vehicleId,
           v.lot_number,
           v.year,
@@ -1509,7 +1678,7 @@ export const todayAuction = async (req, res) => {
           v.vehicleStatus,
           v.image,
           v.certifyStatus,
-
+ 
           u.id AS userId,
           u.name,
           u.contact,
@@ -1519,7 +1688,7 @@ export const todayAuction = async (req, res) => {
           u.email,
           u.date,
           u.role
-
+ 
         FROM tbl_vehicles v
         JOIN tbl_bid b ON v.id = b.vehicleId
         JOIN tbl_users u ON u.id = b.userId
@@ -1528,7 +1697,7 @@ export const todayAuction = async (req, res) => {
       `,
       values
     );
-
+ 
     const formattedResult = result.map((row) => {
       const formatPriceField = (field) => {
         try {
@@ -1537,7 +1706,7 @@ export const todayAuction = async (req, res) => {
           return null;
         }
       };
-
+ 
       let cloudinaryImages = [];
       try {
         if (row.image) {
@@ -1558,7 +1727,17 @@ export const todayAuction = async (req, res) => {
           err.message
         );
       }
-
+ 
+      const startTime = row.startTime
+  ? moment.utc(row.startTime).tz("Asia/Karachi").format("YYYY-MM-DD HH:mm:ss")
+  : null;
+ 
+const endTime = row.endTime
+  ? moment.utc(row.endTime).tz("Asia/Karachi").format("YYYY-MM-DD HH:mm:ss")
+  : null;
+ 
+// const startTime = row.startTime ? moment.utc(row.startTime).toISOString() : null;
+//   const endTime   = row.endTime ? moment.utc(row.endTime).toISOString() : null;
       return {
         ...row,
         yourOffer: formatPriceField("yourOffer"),
@@ -1569,9 +1748,11 @@ export const todayAuction = async (req, res) => {
         MonsterBid: formatPriceField("MonsterBid"),
         images: cloudinaryImages,
         cityName: row.cityName || "Unknown",
+        startTime,
+  endTime
       };
     });
-
+ 
     return res.status(200).json(formattedResult);
   } catch (error) {
     console.error("Error in live Auctions controller:", error);
@@ -1582,7 +1763,6 @@ export const todayAuction = async (req, res) => {
     });
   }
 };
-
 export const getMake = async (req, res) => {
   try {
     const [query] = await pool.query(
