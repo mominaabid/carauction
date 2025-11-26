@@ -61,7 +61,6 @@ import {
 import {
   registerByEmailOTP,
   registerEmailVerification,
-  RegisterverifyEmail,
   updatePassword,
   verifyEmail,
   verifyOTP,
@@ -142,7 +141,7 @@ export default (app) => {
 
   app.post("/customer/registerEmailVerification", registerEmailVerification);
 
-  app.get("/customer/RegisterverifyEmail", RegisterverifyEmail);
+  // app.get("/customer/RegisterverifyEmail", RegisterverifyEmail);
 
   // app.post('/customer/verifyEmail', verifyEmail, (req, res) =>{
   //   res.redirect(`${process.env.FRONTEND_URL}`)
