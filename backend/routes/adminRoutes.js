@@ -71,7 +71,7 @@ import {
   addCity,
   addModel,
   addSeries,
-  deleteBrand,
+  deleteBrand, 
   deleteCity,
   deleteModel,
   deleteSereis,
