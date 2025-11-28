@@ -1,6 +1,8 @@
 import express from "express";
 import { upload } from "../middlewares/uploadMiddleware.js";
 import { uploadVehicleImages } from "../middlewares/uploadMiddleware2.js";
+import {getSimilarVehicles
+} from "../controllers/vehicleController.js";
 import {
   authenticateToken,
   isAdmin,
@@ -99,7 +101,9 @@ export default (app) => {
 
   app.get("/seller/searchLocation", searchLocation);
 
-  app.get("/seller/getLocations", getLocations);
+ app.get("/getSimilarVehicles/:vehicleId", getSimilarVehicles);
+
+ app.get("/seller/getLocations", getLocations);
 
   app.patch("/seller/deleteLocation/:id", deleteLocation);
 

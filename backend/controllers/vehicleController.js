@@ -10,7 +10,86 @@ import {
   getPhotoUrl,
   deleteFileFromCloudinary,
 } from "../utils/cloudinary.js";
-
+export const getSimilarVehicles = async (req, res) => {
+  try {
+    // const { vehicleId } = req.query;
+    const vehicleId = req.params.vehicleId;
+ 
+    if (!vehicleId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "vehicleId is required" });
+    }
+ 
+    // Step 1: Get selected vehicle
+    const [[selectedVehicle]] = await pool.query(
+      `SELECT make, model, bodyStyle FROM tbl_vehicles WHERE id = ? AND vehicleStatus = 'Y'`,
+      [vehicleId]
+    );
+ 
+    if (!selectedVehicle) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Vehicle not found" });
+    }
+ 
+    const { make, model, bodyStyle } = selectedVehicle;
+ 
+    // Step 2: Get similar vehicles (exclude selected vehicle)
+    const [vehicles] = await pool.query(
+      `SELECT
+        id, lot_number, year, make, model, series, bodyStyle, color, mileage, currentBid, buyNowPrice, vehicleStatus, image
+      FROM tbl_vehicles
+      WHERE vehicleStatus = 'Y'
+        AND id != ?
+        AND (make = ? OR model = ? OR bodyStyle = ?)`,
+       
+      [vehicleId, make, model, bodyStyle]
+    );
+ 
+    // Step 3: Format images
+    const formattedVehicles = vehicles.map((v) => {
+      let images = [];
+      try {
+        if (v.image) {
+          const parsed = JSON.parse(v.image);
+          if (Array.isArray(parsed)) {
+            images = parsed.map((img) =>
+              getPhotoUrl(img, { width: 400, crop: "thumb", quality: "auto" })
+            );
+          }
+        }
+      } catch {
+        images = [];
+      }
+ 
+      return {
+        id: v.id,
+        lot_number: v.lot_number,
+        year: v.year,
+        make: v.make,
+        model: v.model,
+        series: v.series,
+        bodyStyle: v.bodyStyle,
+        color: v.color,
+        mileage: v.mileage,
+        currentBid: v.currentBid,
+        buyNowPrice: v.buyNowPrice,
+        vehicleStatus: v.vehicleStatus,
+        images,
+      };
+    });
+ 
+    return res.status(200).json(formattedVehicles);
+  } catch (error) {
+    console.error("Error fetching similar vehicles:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
 export const checkVehicles = async (req, res) => {
   try {
     // --- STEP 1: Log files currently in the uploads directory ---
