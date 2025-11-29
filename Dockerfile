@@ -2,15 +2,17 @@ FROM node:18
 
 WORKDIR /app
 
-# Copy global package.json
+# Copy package files
 COPY package*.json ./
 
-# Install backend folder dependencies
-RUN cd backend && npm install
+# Install dependencies
+RUN npm install
 
-# Copy everything
+# Copy the rest of your backend
 COPY . .
 
+# Expose your backend port
 EXPOSE 3001
 
-CMD ["node", "backend/server.js"]
+# Start the server
+CMD ["node", "server.js"]
