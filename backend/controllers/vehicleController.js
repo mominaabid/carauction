@@ -2594,6 +2594,13 @@ export const getVehicleFinder = async (req, res) => {
 
 export const getApprovedVehicles = async (req, res) => {
   try {
+    let role = req.params.role;
+ 
+    // If role is empty OR invalid → treat as customer
+    if (!role || !["admin", "seller"].includes(role)) {
+      role = "customer";
+    }
+ 
     const {
       yearStart,
       yearEnd,
@@ -2616,53 +2623,74 @@ export const getApprovedVehicles = async (req, res) => {
       color,
       search,
       sortType,
-      lot_number, // ✅ ADDED
     } = req.query;
-
+ 
     const defaultLimit = 100000000000;
     const defaultPage = 1;
     const entry = parseInt(req.query.entry) || defaultLimit;
     const page = parseInt(req.query.page) || defaultPage;
     const limit = Math.max(1, entry);
     const offset = (Math.max(1, page) - 1) * limit;
-
+ 
+    // Base query: join brand & model, ensure valid
     let query = `
-      SELECT 
+      SELECT
         v.*,
         c.cityName,
-        bidtbl.auctionStatus
+        bidtbl.auctionStatus,
+ 
+        COALESCE(v.auctionDate, latestBid.createdAt) AS auctionDate
+ 
       FROM tbl_vehicles v
-
-      INNER JOIN tbl_brands b 
+ 
+      /* Brand must exist */
+      INNER JOIN tbl_brands b
         ON b.brandName COLLATE utf8mb4_unicode_ci = v.make COLLATE utf8mb4_unicode_ci
         AND b.status = 'Y'
-
+ 
+      /* Model must exist and belong to brand */
       INNER JOIN tbl_model m
         ON m.modelName COLLATE utf8mb4_unicode_ci = v.model COLLATE utf8mb4_unicode_ci
         AND m.brandId = b.id
         AND m.status = 'Y'
-
+ 
       LEFT JOIN tbl_cities c ON v.locationId = c.id
-
+ 
       LEFT JOIN (
         SELECT vehicleId, auctionStatus
         FROM tbl_bid
         WHERE id IN (
           SELECT MAX(id)
           FROM tbl_bid
-          WHERE DATE(startTime) = CURDATE() 
+          WHERE DATE(startTime) = CURDATE()
           AND auctionStatus = 'live'
           GROUP BY vehicleId
         )
       ) bidtbl ON v.id = bidtbl.vehicleId
-
+ 
+ LEFT JOIN (
+    SELECT vehicleId, MAX(createdAt) AS createdAt
+    FROM tbl_bid
+    GROUP BY vehicleId
+  ) latestBid ON v.id = latestBid.vehicleId
+ 
+ 
       WHERE v.vehicleStatus = 'Y'
       AND v.approval = 'Y'
       AND v.soldStatus = 'Unsold'
     `;
-
+ 
+    // Add customer-only filter
+ 
     const params = [];
-
+ 
+    if (role === "customer") {
+      query += `
+   AND v.approval = 'Y'
+    AND v.saleStatus IN ('live', 'upcoming')
+  `;
+    }
+ 
     // Auction Date filters
     if (auctionDateStart && auctionDateEnd) {
       query += ` AND v.auctionDate BETWEEN ? AND ?`;
@@ -2671,13 +2699,13 @@ export const getApprovedVehicles = async (req, res) => {
       query += ` AND v.auctionDate = ?`;
       params.push(auctionDate);
     }
-
+ 
     // Location filter
     if (locationId) {
       query += ` AND v.locationId = ?`;
       params.push(locationId);
     }
-
+ 
     // Price filters
     if (maxPrice && minPrice) {
       query += ` AND v.buyNowPrice BETWEEN ? AND ?`;
@@ -2686,7 +2714,7 @@ export const getApprovedVehicles = async (req, res) => {
       query += ` AND v.buyNowPrice <= ?`;
       params.push(buyNowPrice);
     }
-
+ 
     // Year range filter
     if (yearStart && yearEnd) {
       query += ` AND v.year BETWEEN ? AND ?`;
@@ -2698,8 +2726,8 @@ export const getApprovedVehicles = async (req, res) => {
       query += ` AND v.year <= ?`;
       params.push(yearEnd);
     }
-
-    // 🔍 Search filter
+ 
+    // Search filter
     if (search) {
       const s = `%${search.toLowerCase()}%`;
       query += ` AND (
@@ -2712,17 +2740,11 @@ export const getApprovedVehicles = async (req, res) => {
       )`;
       for (let i = 0; i < 6; i++) params.push(s);
     }
-
-    // ⭐⭐⭐ LOT NUMBER FILTER (NEW)
-    if (lot_number) {
-      query += ` AND v.lot_number = ?`;
-      params.push(lot_number);
-    }
-
+ 
     // Make/model mapping if numeric
     let makeName = make;
     let modelName = model;
-
+ 
     if (make && !isNaN(make)) {
       const [rows] = await pool.query(
         `SELECT brandName FROM tbl_brands WHERE id = ?`,
@@ -2730,7 +2752,7 @@ export const getApprovedVehicles = async (req, res) => {
       );
       if (rows.length > 0) makeName = rows[0].brandName;
     }
-
+ 
     if (model && !isNaN(model)) {
       const [rows] = await pool.query(
         `SELECT modelName FROM tbl_model WHERE id = ?`,
@@ -2738,7 +2760,8 @@ export const getApprovedVehicles = async (req, res) => {
       );
       if (rows.length > 0) modelName = rows[0].modelName;
     }
-
+ 
+    // Other filters
     const filters = {
       make: makeName,
       model: modelName,
@@ -2750,19 +2773,19 @@ export const getApprovedVehicles = async (req, res) => {
       fuelType,
       color,
     };
-
+ 
     Object.entries(filters).forEach(([key, value]) => {
       if (value) {
         query += ` AND v.${key} = ?`;
         params.push(value);
       }
     });
-
+ 
     if (vehicleCondition && vehicleCondition !== "all") {
       query += ` AND v.vehicleCondition = ?`;
       params.push(vehicleCondition);
     }
-
+ 
     // Sorting
     if (sortType) {
       if (sortType === "low") query += ` ORDER BY v.buyNowPrice ASC`;
@@ -2772,28 +2795,30 @@ export const getApprovedVehicles = async (req, res) => {
     } else {
       query += ` ORDER BY v.id DESC`;
     }
-
+ 
     // Pagination
     query += ` LIMIT ? OFFSET ?`;
     params.push(limit, offset);
-
+ 
+    // Execute query
     const [vehicles] = await pool.query(query, params);
-
+ 
+    // Process images & prices
     const vehiclesWithImages = vehicles.map((vehicle) => {
       const processed = { ...vehicle };
-
+ 
       try {
         processed.buyNowPrice = formatingPrice(vehicle.buyNowPrice);
       } catch {
         processed.buyNowPrice = null;
       }
-
+ 
       try {
         processed.currentBid = formatingPrice(vehicle.currentBid);
       } catch {
         processed.currentBid = null;
       }
-
+ 
       let imageUrls = [];
       if (processed.image) {
         try {
@@ -2810,15 +2835,15 @@ export const getApprovedVehicles = async (req, res) => {
           }
         } catch {}
       }
-
+ 
       processed.images = imageUrls;
       delete processed.image;
-
+ 
       processed.cityName = processed.cityName || "Unknown";
-
+ 
       return processed;
     });
-
+ 
     res.status(200).json(vehiclesWithImages);
   } catch (error) {
     console.error("Failed to fetch Vehicles:", error);

@@ -306,7 +306,7 @@ export default (app) => {
 
   app.get("/getCititesById/:id", getCititesById);
 
-  app.get("/getApprovedVehicles", getApprovedVehicles);
+   app.get("/getApprovedVehicles/:role", getApprovedVehicles);
 
   app.get("/getUnApprovedVehicles", getUnApprovedVehicles);
 
